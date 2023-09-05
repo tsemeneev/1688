@@ -1,7 +1,6 @@
 import os
 import time
 from io import BytesIO
-
 import requests
 from bs4 import BeautifulSoup
 from openpyxl import load_workbook
@@ -19,22 +18,18 @@ translator = Translator(service_urls=['translate.googleapis.com'])
 class Parser:
     def __init__(self):
         self.options = webdriver.ChromeOptions()
-        # self.options.add_argument('--headless')
+        self.options.add_argument('--headless')
         self.options.add_experimental_option('excludeSwitches', ['enable-automation'])
         self.options.add_experimental_option('useAutomationExtension', False)
         self.options.add_argument('--disable-blink-features=AutomationControlled')
         self.options.add_argument('--disable-dev-shm-usage')
-        # self.options.add_argument('--disable-lazy-loading')
+        self.options.add_argument('--disable-lazy-loading')
         self.options.add_argument('--popup-blocking')
-        # self.options.add_argument('--proxy-server=45.155.200.113:8000')
+        self.options.add_argument('--proxy-server=')  # PROXY например: '--proxy-server=127.0.0.1'
         self.options.add_argument('--disable-gpu')
+        self.options.add_argument(' "--autoplay-policy=no-user-gesture-required"')
         self.options.add_experimental_option('prefs', {
-            # 'profile.managed_default_content_settings.images': 2,
-            'profile.managed_default_content_settings.video': 2,
-            # 'profile.managed_default_content_settings.javascript': 2,
-            # 'profile.managed_default_content_settings.plugins': 2,
             'profile.managed_default_content_settings.popups': 2})
-
         self.img_counter = 1
 
     def get_cookies(self):
@@ -47,10 +42,10 @@ class Parser:
             driver.implicitly_wait(5)
             login_box = driver.find_element(By.ID, 'fm-login-id')
             login_box.clear()
-            login_box.send_keys('tb9096673730')
+            login_box.send_keys('login')  # Логин авторизации напр.: tb9096673730
             password_box = driver.find_element(By.ID, 'fm-login-password')
             password_box.clear()
-            password_box.send_keys('Timrhymer1')
+            password_box.send_keys('password')  # Пароль авторизации
             password_box.send_keys(Keys.ENTER)
 
             time.sleep(7)
@@ -66,6 +61,8 @@ class Parser:
 
             time.sleep(180)
             pickle.dump(driver.get_cookies(), open('cookies', 'wb'))
+            driver.close()
+            driver.quit()
         except Exception as e:
             print(e)
 
@@ -99,21 +96,10 @@ class Parser:
                 ri.perform()
                 time.sleep(5)
                 driver.refresh()
-            # else:
-            #     slider = driver.find_element(By.XPATH, '//span[@class="nc_iconfont btn_slide"]')
-            #     actions = ActionChains(driver)
-            #     move = actions.move_to_element(slider)
-            #     move.perform()
-            #     time.sleep(1)
-            #     ri = actions.drag_and_drop_by_offset(slider, 260, 0)
-            #     ri.perform()
-            #     time.sleep(5)
-            #     driver.refresh()
 
     def parse(self):
         driver = self.del_humanity_check()
         driver.maximize_window()
-        self.create_excel('Зубная-щетка')
         driver.get('https://1688.com/')
         driver.implicitly_wait(5)
         self.slider_detect(driver)
@@ -123,25 +109,36 @@ class Parser:
         driver.refresh()
         driver.implicitly_wait(5)
         self.slider_detect(driver)
-        self.get_by_text(driver, '牙刷')
-        self.create_excel('Зубная-щетка')
-
-        time.sleep(7)
+        self.get_by_img(driver, 'Зубная щетка',
+                                'АБСОЛЮТНЫЙ ПУТЬ ДО КАРТИНКИ')  # Поиск по картинке
+        self.get_by_text(driver, 'Зубная щетка')  # Тут ваш поисковый запрос на русском
 
         driver.close()
         driver.quit()
 
-    @staticmethod
-    def get_by_img(driver, path):
+    def get_by_img(self, driver, product, path):
+        self.create_excel(product.replace(' ', '-'))
         file_input = driver.find_element(By.XPATH, '//div[@class="react-file-reader"]').find_element(
             By.XPATH, "//input[@type='file']")
         print(file_input.get_attribute('id'))
         file_input.send_keys(f'{path}')
+        actions = ActionChains(driver)
+        for k in range(15):  # количество страниц которые нужно пролистать
+            print('k:', k)
+            actions.key_down(Keys.END).key_up(Keys.END).perform()
+            self.slider_detect(driver)
+            time.sleep(1)
+            driver.implicitly_wait(3)
+        self.slider_detect(driver)
+        driver.implicitly_wait(10)
+        self._get_offers_links(driver)
 
     def get_by_text(self, driver, text):
+        self.create_excel(text.replace(' ', '-'))
         product_links = []
         search_box = driver.find_element(By.ID, 'home-header-searchbox')
         search_box.clear()
+        text = translator.translate(text=text, dest='zh-cn').text
         search_box.send_keys(text)
         search_box.send_keys(Keys.ENTER)
         driver.implicitly_wait(5)
@@ -152,17 +149,13 @@ class Parser:
         # time.sleep(555)
         actions = ActionChains(driver)
         self.slider_detect(driver)
-
-        for i in range(2):
-            print(product_links)
-            print('i:', i)
+        for i in range(15):  # Количество страниц которые нужно пролистать
             for k in range(3):
-                print('k:', k)
-                actions.key_down(Keys.PAGE_DOWN).key_up(Keys.PAGE_DOWN).perform()
-                actions.key_down(Keys.PAGE_DOWN).key_up(Keys.PAGE_DOWN).perform()
+                actions.key_down(Keys.END).key_up(Keys.END).perform()
                 self.slider_detect(driver)
-                time.sleep(1)
+                time.sleep(2)
                 driver.implicitly_wait(3)
+
             response = driver.page_source
             soup = BeautifulSoup(response, 'lxml')
             offer_list = soup.find('ul', class_="offer-list").find_all(
@@ -182,28 +175,34 @@ class Parser:
             self.slider_detect(driver)
         self.get_detail_info(driver, product_links)
 
-        # finally:
-        #     driver.close()
-        #     driver.quit()
-
     def get_detail_info(self, driver, links):
         for link in links:
             driver.get(link)
-
             self.slider_detect(driver)
+            self.mini_login_page(driver)
+            driver.implicitly_wait(5)
             response = driver.page_source
             soup = BeautifulSoup(response, 'lxml')
-            title = soup.find('div', attrs={'class': 'title-content'}).find(
-                'div', attrs={'class': 'title-text'}).text.strip()
+            print(link)
+            title = soup.find_all('div', attrs={'class': 'title-content'})
+            if len(title) > 0:
+                title = title[0].find(
+                    'div', attrs={'class': 'title-text'}).text.strip()
+            else:
+                continue
             title = translator.translate(title, dest='ru').text
-            pictures = soup.find('div', attrs={'class': 'detail-gallery-turn-outter-wrapper'}).find_all(
+            pictures = soup.find_all(
                 'img', attrs={'class': 'detail-gallery-img'})
             pictures = [img.get('src') for img in pictures if 'tbvideo' not in img.get('src')]
 
-            price = soup.find('div', attrs={'class': 'price-content'}).find(
-                'div', attrs={'class': 'price-box'}).text.strip()
+            price = soup.find_all(
+                'span', attrs={'class': 'price-text'})
+            if len(price) > 0:
+                price = price[0].text.strip()
+            else:
+                continue
             url = link
-            print(pictures)
+
             data = [['', title, price, ", ".join(pictures), url]]
             self.add_data_to_excel(data, 'Зубная-щетка', pictures)
         driver.close()
@@ -211,21 +210,25 @@ class Parser:
     def add_data_to_excel(self, data, name, pictures):
         workbook = load_workbook(f'./docs/{name}.xlsx')
         sheet = workbook.active
-        response = requests.get(pictures[0])
-        image_content = response.content
-        img = Image(BytesIO(image_content))
+        response = requests.get(pictures[1])
 
-        img.width = 100
-        img.height = 100
-        cell = sheet.cell(row=self.img_counter + 1, column=1)
-        sheet.row_dimensions[self.img_counter+1].height = 77
+        try:
+            image_content = response.content
+            img = Image(BytesIO(image_content))
 
-        for row in data:
-            sheet.append(row)
-        sheet.add_image(img, cell.coordinate)
-        self.img_counter += 1
+            img.width = 100
+            img.height = 100
 
-        workbook.save(f'./docs/{name}.xlsx')
+            for row in data:
+                sheet.append(row)
+            cell = sheet.cell(row=self.img_counter + 1, column=1)
+            sheet.row_dimensions[self.img_counter + 1].height = 77
+            sheet.add_image(img, cell.coordinate)
+            self.img_counter += 1
+
+            workbook.save(f'./docs/{name}.xlsx')
+        except Exception:
+            return None
 
     @staticmethod
     def create_excel(title):
@@ -246,6 +249,38 @@ class Parser:
             ws.column_dimensions['E'].height = 42
 
             wb.save(f'./docs/{title}.xlsx')
+
+    def _get_offers_links(self, driver):
+        product_links = []
+        response = driver.page_source
+        soup = BeautifulSoup(response, 'lxml')
+        offer_list = soup.find('ul', class_="offer-list").find_all(
+            'div', class_='mojar-element-title')
+
+        for product in offer_list:
+            link = product.find('a').get('href')
+            if 'detail' not in link:
+                continue
+            product_links.append(link)
+
+        self.slider_detect(driver)
+        self.get_detail_info(driver, product_links)
+
+    @staticmethod
+    def mini_login_page(driver):
+        login_page = driver.find_elements(By.XPATH, '//body[@class=mini-login-body]')
+        if len(login_page) > 0:
+            driver.find_element(By.XPATH, '//a[@class=show-pwd-login-link]').click()
+            driver.implicitly_wait(3)
+            login_box = driver.find_element(By.ID, 'fm-login-id')
+            login_box.clear()
+            login_box.send_keys('login')
+            password_box = driver.find_element(By.ID, 'fm-login-password')
+            password_box.clear()
+            password_box.send_keys('password')
+            driver.find_element(By.XPATH, '//input[@id=fm-agreement-checkbox]').click()
+            time.sleep(1)
+            driver.find_element(By.TAG_NAME, 'button').click()
 
 
 parser = Parser()
